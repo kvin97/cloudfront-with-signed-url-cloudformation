@@ -1,0 +1,22 @@
+{
+  "name": "Generate-Signed-URL",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "generate:key_pair": "node keyPairGeneration.js",
+    "generate:signed_url": "node SignedUrlGeneration.js",
+    "generate:signed_url_with_secret_manager": "node SignedUrlGenerationUsingSecretManager.js",
+    "generate:signed_url_with_public_key_group": "node SignedURLGenerationUsingPublicKeyGroup.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.328.0",
+    "aws-cloudfront-sign": "^2.2.0",
+    "aws-sdk": "^2.1373.0",
+    "crypto": "^1.0.1"
+  }
+}

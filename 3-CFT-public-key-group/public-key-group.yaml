@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  PublicKeyGroupIdentifier:
+    Description: public key group name suffix
+    Type: String
+    Default: public-key-group
+    MinLength: "1"
+    MaxLength: "255"
+  PublicKeyCallerReference:
+    Description: public key caller reference
+    Type: String
+    Default: "1683362429" # current timestamp
+    MinLength: "1"
+    MaxLength: "255"
+
+Resources:
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+            Effect: Allow
+            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Principal:
+              AWS:
+                !Join [
+                  "",
+                  [
+                    "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ",
+                    !Ref CloudFrontOriginAccessIdentity,
+                  ],
+                ]
+
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      # please change the bucket name as you prefer since this needs to be globally unique
+      BucketName: !Sub "${AWS::Region}-s3-bucket"
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: Origin access identity for cloudfront-infrastructure
+
+  CloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: distribution for cloudfront-infrastructure
+        IPV6Enabled: true
+        Origins:
+          - DomainName: !GetAtt S3Bucket.DomainName
+            Id: !Ref S3Bucket
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join [
+                  "",
+                  [
+                    "origin-access-identity/cloudfront/",
+                    !Ref CloudFrontOriginAccessIdentity,
+                  ],
+                ]
+        Enabled: true
+        DefaultCacheBehavior:
+          TrustedKeyGroups:
+            - !Ref CloudFrontPublicKeyGroup
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          TargetOriginId: !Ref S3Bucket
+          ViewerProtocolPolicy: https-only
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+
+  CloudFrontPublicKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Properties:
+      KeyGroupConfig:
+        Comment: "public key group for cloudfront-infrastructure"
+        Items:
+          - !Ref CloudFrontPublicKey
+        Name: !Sub "${AWS::Region}-${PublicKeyGroupIdentifier}"
+
+  CloudFrontPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        CallerReference: !Ref PublicKeyCallerReference
+        Comment: "public key for cloudfront-infrastructure"
+        Name: !Sub "${AWS::Region}-public-key"
+        EncodedKey: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkgcmmUd61GcoVLh4mKo7
+          isZUKopguFnovZZwGS1Wg+qaNDiz15HLYkYxF8Zb7YdS/1XAq14gewhdzZ4JD1z+
+          d3PvPStLRqsnfItlgNIzpBo6kFf1C+7KyadxD30yEWUKIzEGt2EQkXR9I0UAZ+yN
+          UmlIUZgeHf6IbX/dAv60ybZqJQPEAoqqUGaMpGPNLXXkokcy5MCru2+S5+gMV5fb
+          epJB6zni7RMoXKBNJLPXAwFNM+/TcXCY3hMJOC93zLSokpzqYCpLlikQTXsuXtcQ
+          bj/NAEx3cYpD6cQL8at1CdKVYA3PyCHbIj942loqac5nJKcEfYixjaqApRa/+smo
+          FQIDAQAB
+          -----END PUBLIC KEY-----
+
+Outputs:
+  CloudfrontDistribution:
+    Description: Cloudfront Distribution
+    Value: !Ref CloudfrontDistribution
+  CloudFrontOriginAccessIdentity:
+    Description: Cloudfront Origin Access Identity (OAI)
+    Value: !Ref CloudFrontOriginAccessIdentity
+  S3Bucket:
+    Description: Cloudfront Origin - S3 Bucket
+    Value: !Ref S3Bucket
+  S3BucketPolicy:
+    Description: S3 Bucket Policy
+    Value: !Ref S3BucketPolicy
+  CloudFrontPublicKeyGroup:
+    Description: Cloudfront Public Key Group
+    Value: !Ref CloudFrontPublicKeyGroup
+  CloudFrontPublicKey:
+    Description: Cloudfront Public Key
+    Value: !Ref CloudFrontPublicKey

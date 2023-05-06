@@ -1,0 +1,2 @@
+# ignore node modules resides in node-scripts-signed-URL-generation
+node-scripts-signed-URL-generation/node_modules

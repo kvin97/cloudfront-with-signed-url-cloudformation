@@ -1,0 +1,401 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  PublicKeyGroupIdentifier:
+    Description: public key group name suffix
+    Type: String
+    Default: public-key-group
+    MinLength: "1"
+    MaxLength: "255"
+  PublicKeyCallerReference:
+    Description: public key caller reference
+    Type: String
+    Default: "1683362429" # current timestamp
+    MinLength: "1"
+    MaxLength: "255"
+
+Resources:
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+            Effect: Allow
+            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Principal:
+              AWS:
+                !Join [
+                  "",
+                  [
+                    "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ",
+                    !Ref CloudFrontOriginAccessIdentity,
+                  ],
+                ]
+
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      # please change the bucket name as you prefer since this needs to be globally unique
+      BucketName: !Sub "${AWS::Region}-s3-bucket"
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: Origin access identity for cloudfront-infrastructure
+
+  CloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: distribution for cloudfront-infrastructure
+        IPV6Enabled: true
+        Origins:
+          - DomainName: !GetAtt S3Bucket.DomainName
+            Id: !Ref S3Bucket
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join [
+                  "",
+                  [
+                    "origin-access-identity/cloudfront/",
+                    !Ref CloudFrontOriginAccessIdentity,
+                  ],
+                ]
+        Enabled: true
+        DefaultCacheBehavior:
+          TrustedKeyGroups:
+            - !Ref CloudFrontPublicKeyGroup
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          TargetOriginId: !Ref S3Bucket
+          ViewerProtocolPolicy: https-only
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+
+  CloudFrontPublicKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Properties:
+      KeyGroupConfig:
+        Comment: "public key group for cloudfront-infrastructure"
+        Items:
+          - !Ref CloudFrontPublicKey
+        Name: !Sub "${AWS::Region}-${PublicKeyGroupIdentifier}"
+
+  CloudFrontPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        CallerReference: !Ref PublicKeyCallerReference
+        Comment: "public key for cloudfront-infrastructure"
+        Name: !Sub "${AWS::Region}-public-key"
+        EncodedKey: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkgcmmUd61GcoVLh4mKo7
+          isZUKopguFnovZZwGS1Wg+qaNDiz15HLYkYxF8Zb7YdS/1XAq14gewhdzZ4JD1z+
+          d3PvPStLRqsnfItlgNIzpBo6kFf1C+7KyadxD30yEWUKIzEGt2EQkXR9I0UAZ+yN
+          UmlIUZgeHf6IbX/dAv60ybZqJQPEAoqqUGaMpGPNLXXkokcy5MCru2+S5+gMV5fb
+          epJB6zni7RMoXKBNJLPXAwFNM+/TcXCY3hMJOC93zLSokpzqYCpLlikQTXsuXtcQ
+          bj/NAEx3cYpD6cQL8at1CdKVYA3PyCHbIj942loqac5nJKcEfYixjaqApRa/+smo
+          FQIDAQAB
+          -----END PUBLIC KEY-----
+
+  PrivateKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: "private key for cloudfront-infrastructure"
+      Name: !Sub "${AWS::Region}-private-key-secret"
+      SecretString: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCSByaZR3rUZyhU
+        uHiYqjuKxlQqimC4Wei9lnAZLVaD6po0OLPXkctiRjEXxlvth1L/VcCrXiB7CF3N
+        ngkPXP53c+89K0tGqyd8i2WA0jOkGjqQV/UL7srJp3EPfTIRZQojMQa3YRCRdH0j
+        RQBn7I1SaUhRmB4d/ohtf90C/rTJtmolA8QCiqpQZoykY80tdeSiRzLkwKu7b5Ln
+        6AxXl9t6kkHrOeLtEyhcoE0ks9cDAU0z79NxcJjeEwk4L3fMtKiSnOpgKkuWKRBN
+        ey5e1xBuP80ATHdxikPpxAvxq3UJ0pVgDc/IIdsiP3jaWippzmckpwR9iLGNqoCl
+        Fr/6yagVAgMBAAECggEAEqLu/ijtOCZiM03HtlQjfTaKj1NRvLVcyrVkYRI0NGnA
+        fGGwMhbdShGDOnGKUeovYX7kM/qzUoBi2FcO+PL5Vu1o3vmjhcVaKL7xmVs6U/s0
+        9i8Dix5SqyG/gCaOOUIX5R3gqY6tuqKPRe0MfDboYlglbqRnU5SkfLUQ080F7ag0
+        0bNFn9S9N+XY4/VmBxTrhAxiyorKoWZiKbzKJhYjj6rzIu48FvfkuoJQcNyXTNyW
+        oNiBflojbN6ExmFdlZYKEtsbkbA8GAb4z4TPYJIAlOYWAHmCnAPQqw88eqxoY4tR
+        4S9qB6bzHip6FHjDM21T6TMQywmFyGn9olt5yqqJEQKBgQDBe+/dOTfKFkYtu+Gx
+        Zt3ZlzEI5PBEe+kT36zV6jmq5P/Rx6b7yVh/Uj2FQ5KJpqityCZ7ikZivMsqUw8m
+        zhsXpUZ6Po10llGnks678LeeejutTYvBiqXTzaf1RKA3R1XLFVu3IA+hak6yhIqW
+        6f46p0uRPSDUbEiVZ1Y+4r2t0wKBgQDBNd5rplvnTvfSjH5f9ErVRGL2fUF+A6BX
+        my2/tH2ajYmJi/bV1xa8jkWNYiOflr+Z/YEJ0/RpF03xHAgTkSjRqjXMLIPPRz8U
+        ye19psP0fyMCe06iY5LhBjKhNSiH1L0Fp5R+DoPBVhIRaqjGq0JrtVa8pRgjGcx+
+        BgM5SOLZdwKBgCbJg7JjkA2RHYx5h6sapgrCxm+0BX6VIIp9YpaXl+vscGRLk+wR
+        1w3fHLoka7HwmQwNfblyZN3SXyAi+nybAM9isJg9BfqDT+c6BPukLAs3EdOSIhww
+        gUHOjocatMugH1DQ/Uvev4NqXlBnRakvS2nSs9Fv4a7z7jEVQDLnHYNFAoGBAIAA
+        SjyTWCukG3b38PltBO7Jga6/SNZNXLrtaZ+p2dS8lDP18C+3ca61qsqCDAu8eW9x
+        jT2PmErPT6m+4nLkJmDRHRcJHsIB9360UIyAIS4n1G/edTgMM9C0pHI8n39tp1TJ
+        swzYXN2HQi0btnj4GOb2mmIcFiObAekz3orjCLb9AoGAA0Hz3jmXzxcV+GYtjFOg
+        pyJMK9msBG2PMr1ip2Lzo7H5PDEJSgEXImGkLS0KIhbFpcFl8iohnLWHx+TNv63m
+        nob2p/zHgf2zXDwfv6jCrBhp+5s041EYWGGtg/RmxMdQSLavQwXpfQu8nHkuG/3Q
+        cP5L7tlA7d8L8X0tciVT2VM=
+        -----END PRIVATE KEY-----
+
+  SecretRotationSchedule:
+    Type: AWS::SecretsManager::RotationSchedule
+    Properties:
+      RotateImmediatelyOnUpdate: true
+      RotationLambdaARN: !GetAtt LambdaSecretRotation.Arn
+      RotationRules:
+        # instead of no. of days between rotation, you can set automated rotation by ScheduleExpression with cron() or rate()
+        AutomaticallyAfterDays: 14
+        Duration: 1h
+      SecretId: !Ref PrivateKeySecret
+
+  LambdaSecretRotation:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs14.x
+      Handler: index.handler
+      Timeout: 60
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          PUBLIC_KEY_GROUP_ID: !Ref CloudFrontPublicKeyGroup
+          PUBLIC_KEY_GROUP_NAME: !Sub "${AWS::Region}-${PublicKeyGroupIdentifier}"
+          PUBLIC_KEY_NAME: !Sub "${AWS::Region}-public-key"
+          PRIVATE_KEY_SECRET_ARN: !Ref PrivateKeySecret
+          STACK_NAME: !Ref AWS::StackName
+      Code:
+        ZipFile: |
+          var AWS = require("aws-sdk");
+          const { generateKeyPair } = require("crypto");
+
+          const PUBLIC_KEY_GROUP_ID = process.env.PUBLIC_KEY_GROUP_ID;
+          const PUBLIC_KEY_GROUP_NAME = process.env.PUBLIC_KEY_GROUP_NAME;
+          const PUBLIC_KEY_NAME = process.env.PUBLIC_KEY_NAME;
+          const PRIVATE_KEY_SECRET_ARN = process.env.PRIVATE_KEY_SECRET_ARN;
+          const STACK_NAME = process.env.STACK_NAME;
+
+          /*
+          This is for secret manager - private key rotation lambda function and will not be used to run this locally as a npm script
+
+          Reference:
+          AWS-SDK secret manager API documentation - https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/SecretsManager.html
+          AWS-SDK cloudfront API documentation - https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/CloudFront.html 
+          */
+          exports.handler = async (event) => {
+            var cloudfront = new AWS.CloudFront({ apiVersion: "2020-05-31" });
+
+            // creates private and public key
+            const response = await new Promise((resolve) => {
+              generateKeyPair(
+                "rsa",
+                {
+                  modulusLength: 2048,
+                  publicKeyEncoding: {
+                    type: "spki",
+                    format: "pem",
+                  },
+                  privateKeyEncoding: {
+                    type: "pkcs8",
+                    format: "pem",
+                  },
+                },
+                (err, publicKey, privateKey) => {
+                  resolve({ publicKey, privateKey });
+                }
+              );
+            });
+
+            var params = {
+              Id: PUBLIC_KEY_GROUP_ID,
+            };
+
+            // retrieve public key group created for the cloudfront distribution
+            const keyGroups = await cloudfront.getKeyGroup(params).promise();
+
+            // get existing public key attached to public key group
+            const pkGet = await new Promise((resolve) =>
+              cloudfront.getPublicKey(
+                { Id: keyGroups.KeyGroup.KeyGroupConfig.Items[0] },
+                function (err, data) {
+                  if (err) console.log(err, err.stack);
+                  else resolve(data);
+                }
+              )
+            );
+
+            const timeStamp = new Date().getTime();
+
+            const createParams = {
+              PublicKeyConfig: {
+                // CallerReference needs to be a unique ID to avoid replaying same request, hence timestamp is used
+                CallerReference: `${timeStamp}`,
+                EncodedKey: response.publicKey,
+                Name: `${PUBLIC_KEY_NAME}-${timeStamp}`,
+                Comment: `public key created by rotation lambda for ${STACK_NAME} - ${timeStamp}`,
+              },
+            };
+
+            // create a new public key in cloudfront using generated public key
+            const pkCreation = await new Promise((resolve) =>
+              cloudfront.createPublicKey(createParams, function (err, data) {
+                if (err) console.log(err, err.stack);
+                else resolve(data);
+              })
+            );
+
+            console.log("Created public key: ", pkCreation);
+
+            var updateParams = {
+              Id: keyGroups.KeyGroup.Id,
+              KeyGroupConfig: {
+                Items: [pkCreation.PublicKey.Id],
+                Name: PUBLIC_KEY_GROUP_NAME,
+                Comment: `public key created by rotation lambda for ${STACK_NAME} - ${timeStamp}`,
+              },
+              IfMatch: keyGroups.ETag,
+            };
+
+            // attach newly created public key with public key group of the cloudfront distribution
+            const pkGroupUpdate = await new Promise((resolve) =>
+              cloudfront.updateKeyGroup(updateParams, function (err, data) {
+                if (err) console.log(err, err.stack);
+                else resolve(data);
+              })
+            );
+
+            console.log("Updated public key group: ", pkGroupUpdate);
+
+            // delete previous public key
+            const deletePreviousPublicKey = await new Promise((resolve) =>
+              cloudfront.deletePublicKey(
+                // ETag header is retrieved when fetching public key
+                { Id: pkGet.PublicKey.Id, IfMatch: pkGet.ETag },
+                function (err, data) {
+                  if (err) console.log(err, err.stack);
+                  else resolve(data);
+                }
+              )
+            );
+
+            console.log("Previous public key deletion: ", deletePreviousPublicKey);
+
+            const secretsmanager = new AWS.SecretsManager();
+
+            const privateKeyParams = {
+              Description: `private key updated by rotation lambda for ${STACK_NAME} - ${timeStamp}`,
+              SecretId: PRIVATE_KEY_SECRET_ARN,
+              SecretString: response.privateKey,
+            };
+
+            // update private key in secret manager with generated private key
+            const updatePrivateKey = await new Promise((resolve) =>
+              secretsmanager.updateSecret(privateKeyParams, function (err, data) {
+                if (err) console.log(err, err.stack);
+                else resolve(data);
+              })
+            );
+
+            console.log("Updated private key in secret manager: ", updatePrivateKey);
+          };
+
+      Description: Rotate RSA public-private key pair used for cloudfront-infrastructure
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: lambda secret rotation role for cloudfront-infrastructure
+      RoleName: !Sub "${AWS::Region}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${AWS::Region}-lambda-secret-rotation-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "cloudfront:CreatePublicKey"
+                  - "cloudfront:UpdateKeyGroup"
+                  - "cloudfront:UpdatePublicKey"
+                  - "cloudfront:GetKeyGroup"
+                  - "cloudfront:GetPublicKey"
+                  - "cloudfront:ListDistributions"
+                  - "cloudfront:DeletePublicKey"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:UpdateSecret"
+                  - "secretsmanager:DescribeSecret"
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:PutSecretValue"
+                  - "secretsmanager:UpdateSecretVersionStage"
+                Resource: !Ref PrivateKeySecret
+
+  SecretManagerLambdaRotationPermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaSecretRotation.Arn
+      Action: lambda:InvokeFunction
+      Principal: secretsmanager.amazonaws.com
+      SourceArn: !Ref PrivateKeySecret
+
+Outputs:
+  CloudfrontDistribution:
+    Description: Cloudfront Distribution
+    Value: !Ref CloudfrontDistribution
+  CloudFrontOriginAccessIdentity:
+    Description: Cloudfront Origin Access Identity (OAI)
+    Value: !Ref CloudFrontOriginAccessIdentity
+  S3Bucket:
+    Description: Cloudfront Origin - S3 Bucket
+    Value: !Ref S3Bucket
+  S3BucketPolicy:
+    Description: S3 Bucket Policy
+    Value: !Ref S3BucketPolicy
+  CloudFrontPublicKeyGroup:
+    Description: Cloudfront Public Key Group
+    Value: !Ref CloudFrontPublicKeyGroup
+  CloudFrontPublicKey:
+    Description: Cloudfront Public Key
+    Value: !Ref CloudFrontPublicKey
+  PrivateKeySecret:
+    Description: Secret Manager Private Key
+    Value: !Ref PrivateKeySecret
+  SecretRotationSchedule:
+    Description: Secret Manager Private Key Rotation Schedule
+    Value: !Ref SecretRotationSchedule
+  LambdaSecretRotation:
+    Description: Lambda To Rotate Cloudfront RSA Key Pair
+    Value: !Ref LambdaSecretRotation
+  LambdaRole:
+    Description: Lambda Role
+    Value: !Ref LambdaRole
+  SecretManagerLambdaRotationPermissions:
+    Description: Secret Manager Private Key Rotation Lambda
+    Value: !Ref SecretManagerLambdaRotationPermissions
