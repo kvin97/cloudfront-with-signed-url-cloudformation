@@ -17,9 +17,6 @@ keyPairGeneration = async () => {
         },
       },
       (err, publicKey, privateKey) => {
-        console.log("CHECK PUBLIC ================>\n", publicKey);
-        console.log("CHECK PRIVATE ================>\n", privateKey);
-
         resolve({ publicKey, privateKey });
       }
     );
